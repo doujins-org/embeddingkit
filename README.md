@@ -4,7 +4,7 @@
 
 - generating embeddings (text, and optionally vision-language),
 - storing/searching vectors (via app-provided storage),
-- running background embedding jobs (task table + River worker helpers).
+- running background embedding jobs (task table + optional River worker helpers).
 
 This library is intentionally **domain-agnostic**: the host application provides
 callbacks for building text/documents and fetching assets, and an implementation
@@ -24,7 +24,7 @@ of the storage interface that matches its own Postgres schema (typically
 - OpenAI-compatible text embedder client (DeepInfra/DashScope/etc).
 - Interfaces for multimodal embedder(s) (VL).
 - Task table migrations + repositories for enqueueing work.
-- River worker helpers for processing tasks.
+- Optional River worker helpers for processing tasks (apps may use any job system).
 - Query helper utilities (pgvector/halfvec expression helpers).
 
 ## What the host app owns
@@ -57,7 +57,9 @@ _ = migrate.ApplyPostgres(ctx, pgxPool, "embeddingkit")
 ### 3) Enqueue work and run workers
 
 - Enqueue with `tasks.Repo.Enqueue(...)` or `runtime.Runtime.EnqueueTextEmbedding(...)`.
-- Process tasks with `river.TaskBatchWorker` (schedule periodically with River).
+- Process tasks with either:
+  - `river.TaskBatchWorker` (if you use River), or
+  - your own job runner that calls `tasks.Repo.FetchReady` + `runtime.Runtime.GenerateAndStoreEmbedding` + `tasks.Repo.Complete/Fail`.
 
 The host app provides:
 
