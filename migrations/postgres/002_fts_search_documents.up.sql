@@ -3,11 +3,11 @@
 -- This migration extends `search_documents` so the same host-provided lexical
 -- document can power:
 --   - trigram/typeahead (heavy-normalized `document` + gin_trgm_ops)
---   - full-text search (raw-ish `raw_document` + `tsv` GIN index)
+--   - full-text search (derived `tsv` GIN index)
 --
 -- NOTE: This does not change the host callback interface. Hosts still provide
 -- one lexical document per (entity_type, entity_id, language); searchkit stores
--- both representations internally.
+-- its normalized trigram surface (`document`) and a derived FTS vector (`tsv`).
 
 BEGIN;
 
@@ -36,13 +36,8 @@ AS $$
     END;
 $$;
 
--- Backfill existing rows (old schema stored only the heavy-normalized document).
 UPDATE search_documents
-SET raw_document = document
-WHERE raw_document IS NULL;
-
-UPDATE search_documents
-SET tsv = to_tsvector(searchkit_regconfig_for_language(language), coalesce(raw_document, ''))
+SET tsv = to_tsvector(searchkit_regconfig_for_language(language), coalesce(document, ''))
 WHERE tsv IS NULL;
 
 -- FTS index.
@@ -50,4 +45,3 @@ CREATE INDEX IF NOT EXISTS idx_search_documents_tsv_gin
     ON search_documents USING gin (tsv);
 
 COMMIT;
-
