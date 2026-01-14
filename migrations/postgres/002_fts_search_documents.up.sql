@@ -37,7 +37,10 @@ AS $$
 $$;
 
 UPDATE search_documents
-SET tsv = to_tsvector(searchkit_regconfig_for_language(language), coalesce(document, ''))
+SET tsv = to_tsvector(
+    searchkit_regconfig_for_language(language),
+    coalesce(raw_document, document, '')
+)
 WHERE tsv IS NULL;
 
 -- FTS index.

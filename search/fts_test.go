@@ -18,3 +18,20 @@ func TestFTSSearch_Validation(t *testing.T) {
 		t.Fatalf("expected error for nil pool")
 	}
 }
+
+func TestNormalizeFTSScore(t *testing.T) {
+	if got := NormalizeFTSScore(0); got != 0 {
+		t.Fatalf("expected 0, got %v", got)
+	}
+	if got := NormalizeFTSScore(-1); got != 0 {
+		t.Fatalf("expected 0, got %v", got)
+	}
+	got := NormalizeFTSScore(1)
+	if got < 0.49 || got > 0.51 {
+		t.Fatalf("expected ~0.5, got %v", got)
+	}
+	got = NormalizeFTSScore(9)
+	if got <= 0.8 || got >= 1 {
+		t.Fatalf("expected in (0.8,1), got %v", got)
+	}
+}

@@ -2,8 +2,8 @@
 
 `searchkit` is a Go library for:
 
-- **Typeahead / fuzzy lexical search** (language-specific) via Postgres `pg_trgm` over `search_documents.document`.
-- **Keyword lexical search** (BM25-family; language-specific) via Postgres full-text search over `search_documents.tsv`.
+- **Typeahead / fuzzy lexical search** (language-specific) via Postgres `pg_trgm` over `search_documents.document` (and optionally PGroonga for `ja/zh/ko`).
+- **Keyword lexical search** (BM25-family; language-specific) via Postgres full-text search over `search_documents.tsv` (and optionally PGroonga for `ja/zh/ko`).
 - **Semantic search** (language-specific embeddings) via pgvector `halfvec` stored in `embedding_vectors`.
 - A **single, host-run worker loop** that:
   - consumes `search_dirty` notifications (changed/deleted entities),
@@ -18,6 +18,14 @@ This README is a **manual** for host applications. Design notes live in `agents/
 
 searchkit migrations are applied/tracked with migratekit (`public.migrations`) under `app=searchkit`,
 and are scoped to the host schema via `SET LOCAL search_path = <schema>, public`.
+
+Note on PGroonga (CJK/Korean support):
+
+- You must install the PGroonga extension package in your Postgres image for your Postgres major version (package names vary by distro).
+  - Example (Debian/Ubuntu images): install `postgresql-<MAJOR>-pgroonga` from the PGDG/APT repo, then restart Postgres.
+- Migration `003_pgroonga_search_documents` runs `CREATE EXTENSION pgroonga`, which typically requires superuser (or elevated) privileges.
+- If your environment can’t run `CREATE EXTENSION` from app migrations, install/enable PGroonga out-of-band, then mark the migration applied (or apply it manually).
+- If PGroonga is not installed/enabled, CJK/Korean routing (`ja/zh/ko`) will fail at query time with a Postgres error (missing operator/function/index).
 
 ```go
 import (
@@ -82,8 +90,13 @@ This single entrypoint:
 
 Recommended entrypoints:
 
-- Typeahead (trigram-only): `searchkit.Typeahead(...)`
-- Search (FTS + vector fused by RRF): `searchkit.Search(...)`
+- Typeahead: `searchkit.Typeahead(...)`
+- Search (lexical + vector fused by RRF): `searchkit.Search(...)`
+
+Language-specific routing:
+
+- For most languages, Typeahead uses `pg_trgm` over `<schema>.search_documents.document`, and Search uses Postgres FTS (`tsvector` + `ts_rank_cd`) for the lexical side.
+- For `ja`/`zh`/`ko`, Typeahead and the lexical side of Search use **PGroonga** over `<schema>.search_documents.raw_document` (native-script), because Postgres FTS `simple` config does not provide Japanese/Chinese segmentation and trigram transliteration is lossy.
 
 Lower-level building blocks (if you need direct control):
 
@@ -94,6 +107,10 @@ Lexical (typeahead / typos / substring):
 Lexical (keyword search; BM25-family):
 
 - `search.FTSSearch(ctx, pool, query, search.FTSOptions{Schema, Language, EntityTypes, Limit})`
+
+Lexical (CJK/Korean native script; PGroonga):
+
+- `search.PGroongaSearch(ctx, pool, query, search.PGroongaOptions{Schema, Language, EntityTypes, Limit})`
 
 Semantic (candidate generation; host hydrates IDs + applies business logic):
 

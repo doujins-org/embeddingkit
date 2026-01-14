@@ -84,14 +84,14 @@ func UpsertSearchDocuments(ctx context.Context, pool *pgxpool.Pool, schema strin
 				$1,
 				rows.entity_id,
 				$2,
-				NULL,
+				rows.raw_document,
 				rows.document,
 				to_tsvector(%s.searchkit_regconfig_for_language($2), rows.raw_document),
 				now(),
 				now()
 			FROM rows
 			ON CONFLICT (entity_type, entity_id, language) DO UPDATE SET
-				raw_document = NULL,
+				raw_document = EXCLUDED.raw_document,
 				document = EXCLUDED.document,
 				tsv = EXCLUDED.tsv,
 				updated_at = now()

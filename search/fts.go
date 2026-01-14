@@ -23,6 +23,31 @@ type FTSOptions struct {
 	Limit       int
 }
 
+// NormalizeFTSScore maps Postgres `ts_rank_cd` scores into a bounded [0..1] range.
+//
+// `ts_rank_cd` does not have a fixed upper bound and can vary by document length.
+// This normalization is intentionally simple and monotonic:
+//
+//	normalized = raw / (raw + 1)
+func NormalizeFTSScore(raw float32) float32 {
+	if raw <= 0 {
+		return 0
+	}
+	return raw / (raw + 1)
+}
+
+// FTSSearchNormalized runs FTSSearch and normalizes the returned score into [0..1].
+func FTSSearchNormalized(ctx context.Context, pool *pgxpool.Pool, query string, opts FTSOptions) ([]FTSHit, error) {
+	hits, err := FTSSearch(ctx, pool, query, opts)
+	if err != nil {
+		return nil, err
+	}
+	for i := range hits {
+		hits[i].Score = NormalizeFTSScore(hits[i].Score)
+	}
+	return hits, nil
+}
+
 // FTSSearch runs a Postgres full-text search (BM25-family) query against
 // `<schema>.search_documents.tsv`.
 //

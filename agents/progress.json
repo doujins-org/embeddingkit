@@ -38,6 +38,36 @@
         "[x] Update `README.md` to be a host-facing manual",
         "[x] Remove remaining \"embeddingkit\" naming in code/comments"
       ]
+    },
+    {
+      "name": "CJK/Korean Lexical Search: Add PGroonga (Typeahead + FTS replacement)",
+      "tasks": [
+        "=== GOAL ===",
+        "[ ] Improve lexical search quality for `ja`/`zh`/`ko` (PGroonga-backed tokenization/matching) and make typeahead usable in native script for `ja`/`zh`/`ko`.",
+        "[ ] Keep existing Postgres FTS (`tsvector` + `ts_rank_cd`) for stemmer-backed languages (en/es/de/...).",
+        "",
+        "=== PG SETUP (POSTGRES) ===",
+        "[x] Document required Postgres packages + how to install in Docker (PGroonga + dependencies).",
+        "[x] Add a migration to enable extension: `CREATE EXTENSION IF NOT EXISTS pgroonga;` (host must run with sufficient privileges).",
+        "[x] Add PGroonga indexes for CJK/Korean lexical fields:\n  - target table: `<schema>.search_documents`\n  - columns: `raw_document` (native script) and/or `document` (heavy-normalized)\n  - define whether to index all rows or only languages in ('ja','zh','ko') (partial index strategy).",
+        "",
+        "=== SEARCH APIS (SEARCHKIT) ===",
+        "[x] Add `search.PGroongaSearch(...)` returning hits with scores (entity_type/entity_id/language/score).",
+        "[x] Add `searchkit.Search(...)` routing:\n  - if language in {ja,zh,ko}: use PGroonga lexical search\n  - else: use existing FTS lexical search",
+        "[x] Add `searchkit.Typeahead(...)` routing:\n  - if language in {ja,zh,ko}: use PGroonga-backed typeahead (native-script)\n  - else: keep existing trigram-heavy-normalized typeahead",
+        "[x] Define a scoring contract for public APIs:\n  - `searchkit.Search(...)` lexical scores are normalized to a consistent range (target: [0..1]) across backends/languages\n  - `searchkit.Typeahead(...)` scores remain [0..1] and are comparable across languages/backends",
+        "",
+        "=== SCORING / BLENDING ===",
+        "[x] Normalize PGroonga lexical scores to match the same public score range used by English FTS/trigram.\n  - Goal: host apps (doujins/hentai0/etc.) must NOT need any language-specific tuning or score-range branching.",
+        "[x] Implement normalization inside searchkit (not in host apps):\n  - public hit `Score` is always normalized (target: [0..1])\n  - (optional) expose `RawScore` / debug fields only in dev/test builds for calibration",
+        "[x] Ensure deterministic ordering/tie-breakers for lexical hits (score desc, entity_type asc, entity_id asc).",
+        "",
+        "=== TESTING ===",
+        "[x] Add integration tests (docker-compose or testcontainers) covering:\n  - Japanese query matches Japanese document tokens\n  - Chinese query matches Chinese document tokens\n  - Korean query matches Korean document tokens\n  - Regression: en/es/de use FTS path unchanged\n  - Typeahead returns expected items for native-script queries",
+        "",
+        "=== DOCS ===",
+        "[x] Update `README.md` with:\n  - when PGroonga is required\n  - how language routing works\n  - behavior when extension is not installed (fallback)\n  - recommended query strategies for CJK/Korean"
+      ]
     }
   ]
 }

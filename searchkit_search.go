@@ -2,6 +2,7 @@ package searchkit
 
 import (
 	"context"
+	"strings"
 
 	"github.com/doujins-org/searchkit/search"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,14 +57,50 @@ type SearchHit struct {
 //
 // using Reciprocal Rank Fusion (RRF), so results don’t depend on raw score scale.
 func Search(ctx context.Context, pool *pgxpool.Pool, query string, req SearchRequest) ([]SearchHit, error) {
-	lex, err := search.FTSSearch(ctx, pool, query, search.FTSOptions{
-		Schema:      req.Schema,
-		Language:    req.Language,
-		EntityTypes: req.LexicalEntityTypes,
-		Limit:       req.Limit,
-	})
-	if err != nil {
-		return nil, err
+	var lexKeys []search.RRFKey
+	{
+		lang := strings.ToLower(strings.TrimSpace(req.Language))
+		// For ja/zh/ko, prefer PGroonga lexical search (native script / segmentation).
+		if lang == "ja" || lang == "zh" || lang == "ko" {
+			lex, err := search.PGroongaSearch(ctx, pool, query, search.PGroongaOptions{
+				Schema:      req.Schema,
+				Language:    req.Language,
+				EntityTypes: req.LexicalEntityTypes,
+				Limit:       req.Limit,
+				Prefix:      false,
+			})
+			if err != nil {
+				return nil, err
+			}
+			lexKeys = make([]search.RRFKey, 0, len(lex))
+			for _, h := range lex {
+				lexKeys = append(lexKeys, search.RRFKey{
+					EntityType: h.EntityType,
+					EntityID:   h.EntityID,
+					Language:   h.Language,
+					Model:      "",
+				})
+			}
+		} else {
+			lex, err := search.FTSSearch(ctx, pool, query, search.FTSOptions{
+				Schema:      req.Schema,
+				Language:    req.Language,
+				EntityTypes: req.LexicalEntityTypes,
+				Limit:       req.Limit,
+			})
+			if err != nil {
+				return nil, err
+			}
+			lexKeys = make([]search.RRFKey, 0, len(lex))
+			for _, h := range lex {
+				lexKeys = append(lexKeys, search.RRFKey{
+					EntityType: h.EntityType,
+					EntityID:   h.EntityID,
+					Language:   h.Language,
+					Model:      "",
+				})
+			}
+		}
 	}
 
 	sem, err := search.SemanticSearch(ctx, pool, search.Query{
@@ -85,15 +122,6 @@ func Search(ctx context.Context, pool *pgxpool.Pool, query string, req SearchReq
 		return nil, err
 	}
 
-	lexKeys := make([]search.RRFKey, 0, len(lex))
-	for _, h := range lex {
-		lexKeys = append(lexKeys, search.RRFKey{
-			EntityType: h.EntityType,
-			EntityID:   h.EntityID,
-			Language:   h.Language,
-			Model:      "",
-		})
-	}
 	semKeys := make([]search.RRFKey, 0, len(sem))
 	for _, h := range sem {
 		semKeys = append(semKeys, search.RRFKey{

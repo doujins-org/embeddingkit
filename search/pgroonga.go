@@ -1,0 +1,168 @@
+package search
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// PGroongaHit is a lexical hit returned by PGroonga-backed search.
+//
+// Score is normalized (target: [0..1]) so it can be blended with other lexical
+// backends (FTS/trigram) without per-language tuning in host apps.
+type PGroongaHit struct {
+	EntityType string
+	EntityID   string
+	Language   string
+	Score      float32 // normalized
+	RawScore   float32 // backend raw score (for debugging/calibration)
+}
+
+type PGroongaOptions struct {
+	Schema      string
+	Language    string
+	EntityTypes []string
+	Limit       int
+
+	// Prefix enables a loose "typeahead" mode where each whitespace-delimited
+	// token is treated as a prefix.
+	Prefix bool
+
+	// ScoreK controls normalization: normalized = raw / (raw + ScoreK).
+	// Defaults to 10.
+	ScoreK float32
+}
+
+// NormalizePGroongaScore converts a raw PGroonga score into a [0..1] range
+// suitable for blending with other lexical backends.
+//
+// Normalization uses: raw / (raw + k). k defaults to 10.
+func NormalizePGroongaScore(raw float32, k float32) float32 {
+	if raw <= 0 {
+		return 0
+	}
+	if k <= 0 {
+		k = 10
+	}
+	return raw / (raw + k)
+}
+
+func buildPGroongaTypeaheadQuery(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return ""
+	}
+	toks := strings.Fields(q)
+	if len(toks) == 0 {
+		return ""
+	}
+	for i := range toks {
+		// Basic prefix marker. PGroonga supports query syntax; '*' commonly
+		// indicates prefix in its query parser.
+		if !strings.HasSuffix(toks[i], "*") {
+			toks[i] = toks[i] + "*"
+		}
+	}
+	return strings.Join(toks, " ")
+}
+
+func buildPGroongaSQL(schema string, entityTypes []string) (string, pgx.NamedArgs, string, error) {
+	qs, err := quoteIdent(schema)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("invalid schema: %w", err)
+	}
+	table := qs + ".search_documents"
+
+	where := "WHERE sd.language = @language AND sd.raw_document IS NOT NULL AND btrim(sd.raw_document) <> ''"
+	args := pgx.NamedArgs{
+		"language": "",
+		"q":        "",
+		"limit":    0,
+	}
+	if len(entityTypes) > 0 {
+		where += " AND sd.entity_type = ANY(@entity_types::text[])"
+		args["entity_types"] = entityTypes
+	}
+
+	// Query uses PGroonga's query syntax operator. Hosts must ensure the
+	// extension is installed and indexes exist; otherwise this will error.
+	sql := fmt.Sprintf(`
+		SELECT
+			sd.entity_type,
+			sd.entity_id,
+			sd.language,
+			pgroonga_score(tableoid, ctid)::float4 AS raw_score
+		FROM %s sd
+		%s
+		  AND sd.raw_document &@~ @q
+		ORDER BY raw_score DESC, sd.entity_type ASC, sd.entity_id ASC
+		LIMIT @limit
+	`, table, where)
+
+	return sql, args, table, nil
+}
+
+// PGroongaSearch runs a PGroonga-backed lexical search against
+// `<schema>.search_documents.raw_document`.
+//
+// This is intended for languages like ja/zh/ko where Postgres FTS tokenization
+// is insufficient and trigram transliteration is lossy.
+func PGroongaSearch(ctx context.Context, pool *pgxpool.Pool, query string, opts PGroongaOptions) ([]PGroongaHit, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	if strings.TrimSpace(opts.Schema) == "" {
+		return nil, fmt.Errorf("schema is required")
+	}
+	if strings.TrimSpace(opts.Language) == "" {
+		return nil, fmt.Errorf("language is required")
+	}
+	if opts.Limit <= 0 {
+		return []PGroongaHit{}, nil
+	}
+
+	q := strings.TrimSpace(query)
+	q = strings.Join(strings.Fields(q), " ")
+	if q == "" {
+		return []PGroongaHit{}, nil
+	}
+	if opts.Prefix {
+		q = buildPGroongaTypeaheadQuery(q)
+		if q == "" {
+			return []PGroongaHit{}, nil
+		}
+	}
+
+	sql, args, _, err := buildPGroongaSQL(opts.Schema, opts.EntityTypes)
+	if err != nil {
+		return nil, err
+	}
+	args["language"] = opts.Language
+	args["q"] = q
+	args["limit"] = opts.Limit
+
+	rows, err := pool.Query(ctx, sql, args)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	k := opts.ScoreK
+	if k <= 0 {
+		k = 10
+	}
+
+	var out []PGroongaHit
+	for rows.Next() {
+		var h PGroongaHit
+		if err := rows.Scan(&h.EntityType, &h.EntityID, &h.Language, &h.RawScore); err != nil {
+			return nil, err
+		}
+		h.Score = NormalizePGroongaScore(h.RawScore, k)
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
