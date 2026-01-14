@@ -4,10 +4,39 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var pgroongaExtensionSchema struct {
+	once   sync.Once
+	schema string
+	err    error
+}
+
+func getPGroongaExtensionSchema(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	if pool == nil {
+		return "", fmt.Errorf("pool is required")
+	}
+
+	pgroongaExtensionSchema.once.Do(func() {
+		var schema string
+		err := pool.QueryRow(ctx, `
+			SELECT n.nspname
+			FROM pg_extension e
+			JOIN pg_namespace n ON n.oid = e.extnamespace
+			WHERE e.extname = 'pgroonga'
+		`).Scan(&schema)
+		if err != nil {
+			pgroongaExtensionSchema.err = fmt.Errorf("detect pgroonga extension schema: %w", err)
+			return
+		}
+		pgroongaExtensionSchema.schema = schema
+	})
+	return pgroongaExtensionSchema.schema, pgroongaExtensionSchema.err
+}
 
 // PGroongaHit is a lexical hit returned by PGroonga-backed search.
 //
@@ -69,12 +98,17 @@ func buildPGroongaTypeaheadQuery(q string) string {
 	return strings.Join(toks, " ")
 }
 
-func buildPGroongaSQL(schema string, entityTypes []string) (string, pgx.NamedArgs, string, error) {
-	qs, err := quoteIdent(schema)
+func buildPGroongaSQL(docSchema string, extSchema string, entityTypes []string) (string, pgx.NamedArgs, string, error) {
+	qs, err := quoteIdent(docSchema)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("invalid schema: %w", err)
 	}
 	table := qs + ".search_documents"
+
+	qext, err := quoteIdent(extSchema)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("invalid pgroonga schema: %w", err)
+	}
 
 	where := "WHERE sd.language = @language AND sd.raw_document IS NOT NULL AND btrim(sd.raw_document) <> ''"
 	args := pgx.NamedArgs{
@@ -94,13 +128,13 @@ func buildPGroongaSQL(schema string, entityTypes []string) (string, pgx.NamedArg
 			sd.entity_type,
 			sd.entity_id,
 			sd.language,
-			pgroonga_score(tableoid, ctid)::float4 AS raw_score
+			%[1]s.pgroonga_score(tableoid, ctid)::float4 AS raw_score
 		FROM %s sd
 		%s
-		  AND sd.raw_document &@~ @q
+		  AND sd.raw_document OPERATOR(%[1]s.&@~) @q
 		ORDER BY raw_score DESC, sd.entity_type ASC, sd.entity_id ASC
 		LIMIT @limit
-	`, table, where)
+	`, qext, table, where)
 
 	return sql, args, table, nil
 }
@@ -136,7 +170,12 @@ func PGroongaSearch(ctx context.Context, pool *pgxpool.Pool, query string, opts 
 		}
 	}
 
-	sql, args, _, err := buildPGroongaSQL(opts.Schema, opts.EntityTypes)
+	extSchema, err := getPGroongaExtensionSchema(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+
+	sql, args, _, err := buildPGroongaSQL(opts.Schema, extSchema, opts.EntityTypes)
 	if err != nil {
 		return nil, err
 	}
