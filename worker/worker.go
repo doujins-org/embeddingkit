@@ -71,20 +71,34 @@ func isRateLimit(err error) bool {
 	return false
 }
 
-func isRetryable(err error) bool {
+func httpStatus(err error) (int, bool) {
 	var apiErr *openai.APIError
 	if errors.As(err, &apiErr) {
-		if apiErr.HTTPStatusCode == 429 || apiErr.HTTPStatusCode == 408 {
-			return true
-		}
-		return apiErr.HTTPStatusCode >= 500 && apiErr.HTTPStatusCode <= 599
+		return apiErr.HTTPStatusCode, true
 	}
 	var reqErr *openai.RequestError
 	if errors.As(err, &reqErr) {
-		if reqErr.HTTPStatusCode == 429 || reqErr.HTTPStatusCode == 408 {
+		return reqErr.HTTPStatusCode, true
+	}
+	return 0, false
+}
+
+func isRetryable(err error) bool {
+	code, ok := httpStatus(err)
+	if ok {
+		// Retry on rate limit/timeouts and server errors.
+		if code == 429 || code == 408 {
 			return true
 		}
-		return reqErr.HTTPStatusCode >= 500 && reqErr.HTTPStatusCode <= 599
+		if code >= 500 && code <= 599 {
+			return true
+		}
+		// Provider misconfig (401/403/400/404/etc) should be retry-later so tasks can
+		// catch up once credentials/config are fixed.
+		if code >= 400 && code <= 499 {
+			return true
+		}
+		return true
 	}
 	return true
 }
@@ -245,10 +259,21 @@ func handleTaskResult(
 
 	attempt := task.Attempts
 	base := cfg.BackoffBase
-	if isRateLimit(err) {
-		base = cfg.BackoffBase
+	max := cfg.BackoffMax
+
+	// For provider misconfiguration (4xx other than 429), we want a slower retry cadence
+	// (hours/days) so we can "catch up later" after creds/config are fixed without
+	// churning the provider.
+	if code, ok := httpStatus(err); ok && code >= 400 && code <= 499 && code != 429 && code != 408 {
+		if base < 15*time.Minute {
+			base = 15 * time.Minute
+		}
+		if max < 7*24*time.Hour {
+			max = 7 * 24 * time.Hour
+		}
 	}
-	backoff := expBackoff(base, attempt, cfg.BackoffMax)
+
+	backoff := expBackoff(base, attempt, max)
 	backoff = addJitter(rng, backoff)
 	_ = repo.Fail(ctx, task.EntityType, task.EntityID, task.Model, task.Language, task.NextRunAt, backoff)
 }

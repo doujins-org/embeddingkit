@@ -78,11 +78,14 @@ func New(opts Options) (*Runtime, error) {
 	if strings.TrimSpace(opts.Schema) == "" {
 		return nil, fmt.Errorf("schema is required")
 	}
-	if opts.BuildSemanticDocument == nil {
-		return nil, fmt.Errorf("BuildSemanticDocument is required")
+	// Embedders are optional: hosts may want lexical-only operation (FTS/trigram/PGroonga)
+	// while deferring semantic embeddings until a provider is configured/available.
+	hasEmbedders := len(opts.TextEmbedders) > 0 || len(opts.VLEmbedders) > 0
+	if hasEmbedders && opts.BuildSemanticDocument == nil {
+		return nil, fmt.Errorf("BuildSemanticDocument is required when embedders are configured")
 	}
-	if len(opts.TextEmbedders) == 0 && len(opts.VLEmbedders) == 0 {
-		return nil, fmt.Errorf("at least one embedder is required")
+	if !hasEmbedders && opts.BuildLexicalString == nil {
+		return nil, fmt.Errorf("at least one embedder or BuildLexicalString is required")
 	}
 
 	textMap := make(map[string]embedder.Embedder, len(opts.TextEmbedders))
@@ -147,6 +150,11 @@ func NewWithContext(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	models := rt.modelSpecs()
+	// Lexical-only runtimes have no models to register or index.
+	// Avoid pruning embedding metadata in this mode.
+	if len(models) == 0 {
+		return rt, nil
+	}
 	if err := pg.UpsertModels(ctx, opts.Pool, opts.Schema, models); err != nil {
 		return nil, err
 	}

@@ -115,7 +115,12 @@ func RunOnceSearchkit(ctx context.Context, rt *runtime.Runtime, opts SearchkitOp
 		return err
 	}
 
-	// 3) Drain embedding tasks (does the provider calls + writes embedding_vectors).
+	// 3) Drain embedding tasks (provider calls + writes embedding_vectors).
+	// If no embedding models are configured, skip draining so tasks remain pending
+	// and lexical maintenance still succeeds.
+	if len(rt.ActiveModels()) == 0 {
+		return nil
+	}
 	return DrainOnce(ctx, rt, repo, cfg.DrainOptions)
 }
 
