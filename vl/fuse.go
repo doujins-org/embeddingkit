@@ -1,6 +1,6 @@
 package vl
 
-import "github.com/doujins-org/searchkit/internal/normalize"
+import "github.com/open-rails/searchkit/internal/normalize"
 
 // FuseAverageL2 averages vectors elementwise and L2-normalizes the result.
 // Returns nil if vectors is empty or dimensions mismatch.

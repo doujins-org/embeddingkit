@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/doujins-org/searchkit/internal/textnormalize"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/open-rails/searchkit/internal/textnormalize"
 )
 
 const searchDocumentsTable = "search_documents"

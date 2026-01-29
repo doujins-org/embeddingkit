@@ -33,7 +33,7 @@ import (
 	"database/sql"
 
 	"github.com/doujins-org/migratekit"
-	"github.com/doujins-org/searchkit/migrations"
+	"github.com/open-rails/searchkit/migrations"
 )
 
 func applySearchkitMigrations(ctx context.Context, sqlDB *sql.DB, schema string) error {

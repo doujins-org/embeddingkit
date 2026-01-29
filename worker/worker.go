@@ -13,9 +13,9 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
-	"github.com/doujins-org/searchkit/runtime"
-	"github.com/doujins-org/searchkit/tasks"
-	"github.com/doujins-org/searchkit/vl"
+	"github.com/open-rails/searchkit/runtime"
+	"github.com/open-rails/searchkit/tasks"
+	"github.com/open-rails/searchkit/vl"
 )
 
 type Options struct {

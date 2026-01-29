@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/doujins-org/searchkit/pg"
-	"github.com/doujins-org/searchkit/runtime"
-	"github.com/doujins-org/searchkit/tasks"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/open-rails/searchkit/pg"
+	"github.com/open-rails/searchkit/runtime"
+	"github.com/open-rails/searchkit/tasks"
 )
 
 type ListEntityIDsPage func(ctx context.Context, entityType string, language string, cursor string, limit int) (ids []string, nextCursor string, done bool, err error)

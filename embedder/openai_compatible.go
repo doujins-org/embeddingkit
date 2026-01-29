@@ -9,7 +9,7 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
-	"github.com/doujins-org/searchkit/internal/normalize"
+	"github.com/open-rails/searchkit/internal/normalize"
 )
 
 type OpenAICompatibleConfig struct {

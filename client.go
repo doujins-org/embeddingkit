@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	querynorm "github.com/doujins-org/searchkit/internal/normalize"
-	"github.com/doujins-org/searchkit/search"
 	"github.com/jackc/pgx/v5/pgxpool"
+	querynorm "github.com/open-rails/searchkit/internal/normalize"
+	"github.com/open-rails/searchkit/search"
 )
 
 type Embedder interface {

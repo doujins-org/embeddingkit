@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	querynorm "github.com/doujins-org/searchkit/internal/normalize"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	querynorm "github.com/open-rails/searchkit/internal/normalize"
 )
 
 type FTSHit struct {

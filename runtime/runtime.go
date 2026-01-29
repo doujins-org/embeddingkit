@@ -8,11 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/doujins-org/searchkit/embedder"
-	"github.com/doujins-org/searchkit/internal/normalize"
-	"github.com/doujins-org/searchkit/pg"
-	"github.com/doujins-org/searchkit/tasks"
-	"github.com/doujins-org/searchkit/vl"
+	"github.com/open-rails/searchkit/embedder"
+	"github.com/open-rails/searchkit/internal/normalize"
+	"github.com/open-rails/searchkit/pg"
+	"github.com/open-rails/searchkit/tasks"
+	"github.com/open-rails/searchkit/vl"
 )
 
 // ErrEntityNotFound can be returned by host callbacks when an entity no longer

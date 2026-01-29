@@ -1,4 +1,4 @@
-module github.com/doujins-org/searchkit
+module github.com/open-rails/searchkit
 
 go 1.24.0
 
